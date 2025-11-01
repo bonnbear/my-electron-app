@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>浏览器钢琴</title>
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#171a21;
+    --panel-2:#1d2230;
+    --text:#e6e9ef;
+    --muted:#9aa4b2;
+    --accent:#4f8cff;
+    --accent-2:#7bd88f;
+    --danger:#ff5d5d;
+
+    --white-w:clamp(30px,7.2vw,64px);
+    --white-h:clamp(150px,36vh,280px);
+    --black-w:calc(var(--white-w)*0.6);
+    --black-h:calc(var(--white-h)*0.65);
+    --key-radius:8px;
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:linear-gradient(180deg,#0e1016, #0a0c11 40%, #0a0b10);
+    color:var(--text);
+    font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei","WenQuanYi Micro Hei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+
+  .app{
+    min-height:100%;
+    display:flex;
+    flex-direction:column;
+  }
+
+  header{
+    padding:14px 16px;
+    background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);
+    border-bottom:1px solid rgba(255,255,255,0.06);
+    position:sticky; top:0; z-index:10;
+    backdrop-filter:saturate(1.2) blur(6px);
+  }
+  .title{
+    display:flex; align-items:center; gap:10px; margin-bottom:10px;
+    flex-wrap:wrap;
+  }
+  .title h1{
+    font-size:16px; margin:0; letter-spacing:.5px; color:#f5f7fb; font-weight:650;
+  }
+  .badge{font-size:12px; padding:2px 8px; border-radius:999px; background:rgba(79,140,255,.14); color:#cfe0ff; border:1px solid rgba(79,140,255,.35)}
+  .controls{
+    display:flex; gap:10px; flex-wrap:wrap;
+  }
+  .control{
+    background:var(--panel);
+    border:1px solid rgba(255,255,255,0.08);
+    padding:8px 10px;
+    border-radius:10px;
+    display:flex; align-items:center; gap:8px;
+    color:var(--text);
+  }
+  .control label{color:var(--muted); font-size:12px}
+  .select, .range, .btn, .toggle {
+    appearance:none;
+    border:none; outline:none;
+    background:var(--panel-2);
+    color:var(--text);
+    border-radius:8px;
+  }
+  .select{
+    padding:7px 10px;
+    border:1px solid rgba(255,255,255,0.08);
+  }
+  .range{
+    height:6px; width:160px; cursor:pointer; position:relative;
+  }
+  .range::-webkit-slider-thumb{
+    -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+    background:var(--accent); box-shadow:0 0 0 3px rgba(79,140,255,.25);
+    border:1px solid rgba(255,255,255,.25);
+  }
+  .btn{
+    padding:7px 10px; cursor:pointer; border:1px solid rgba(255,255,255,0.08);
+    display:inline-flex; align-items:center; gap:8px;
+    transition:.15s ease;
+  }
+  .btn:hover{background:#27314a}
+  .btn:active{transform:translateY(1px)}
+  .toggle{
+    width:42px; height:26px; position:relative; cursor:pointer; background:#303747;
+    border:1px solid rgba(255,255,255,0.08);
+  }
+  .toggle::before{
+    content:""; position:absolute; width:20px; height:20px; top:2px; left:2px;
+    border-radius:50%; background:#cbd5e1; transition:.2s ease;
+    box-shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+  .toggle[data-on="true"]{background:#244bff7a; border-color:#3b57ff85}
+  .toggle[data-on="true"]::before{left:calc(100% - 22px); background:#9cc0ff}
+  .kbd-badge{
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    background:#101421; color:#dbe6ff; border:1px solid rgba(148,176,255,.4);
+    padding:1px 6px; border-radius:6px; font-size:12px;
+  }
+
+  .hint{
+    font-size:12px; color:var(--muted); margin-top:8px;
+  }
+
+  .piano-wrap{
+    position:relative;
+    padding:14px 10px 20px;
+  }
+  #piano{
+    position:relative;
+    overflow-x:auto; overflow-y:hidden;
+    white-space:nowrap;
+    border-top:1px solid rgba(255,255,255,.06);
+    border-bottom:1px solid rgba(255,255,255,.06);
+    border-radius:12px;
+    background:linear-gradient(180deg,#111521,#0d111b);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), inset 0 -1px 0 rgba(0,0,0,.4);
+  }
+  #piano::-webkit-scrollbar{height:10px}
+  #piano::-webkit-scrollbar-thumb{background:#1e2636; border-radius:6px}
+  #piano:active{cursor:grabbing}
+
+  .octave{
+    position:relative; display:inline-block; vertical-align:top;
+    height:var(--white-h);
+    padding:0; margin:0;
+  }
+  .octave .whites{
+    display:flex; height:100%;
+    gap:0; position:relative; z-index:1;
+  }
+  .key{
+    position:relative; user-select:none; -webkit-user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:none;
+  }
+  .key.white{
+    width:var(--white-w); height:var(--white-h);
+    background:linear-gradient(180deg,#f7f7fb,#ececf3 60%,#e1e4ee);
+    border:1px solid #cfd3de;
+    border-bottom-color:#b5bbca;
+    border-radius:0 0 var(--key-radius) var(--key-radius);
+    box-shadow:
+      inset 0 -3px 0 rgba(0,0,0,.08),
+      0 1px 0 rgba(255,255,255,.9),
+      0 3px 6px rgba(0,0,0,.28);
+    margin:0;
+  }
+  .key.white.active{
+    background:linear-gradient(180deg,#e8ecfb,#dbe2fb 70%,#c8d7ff);
+    border-color:#b7c8ff;
+    box-shadow:
+      inset 0 -2px 0 rgba(0,0,0,.12),
+      0 1px 0 rgba(255,255,255,.9),
+      0 0 0 2px rgba(79,140,255,.25),
+      0 3px 10px rgba(79,140,255,.25);
+  }
+
+  .octave .blacks{
+    position:absolute; left:0; top:0; height:var(--black-h); width:calc(var(--white-w)*7);
+    z-index:2; pointer-events:none;
+  }
+  .key.black{
+    position:absolute; pointer-events:auto;
+    width:var(--black-w); height:var(--black-h);
+    background:linear-gradient(180deg,#1a1c23,#0f1116);
+    border:1px solid #10131a;
+    border-bottom-color:#0a0c11;
+    border-radius:0 0 6px 6px;
+    box-shadow:
+      inset 0 -6px 0 rgba(0,0,0,.4),
+      0 6px 12px rgba(0,0,0,.5);
+    left:calc(var(--white-w) * var(--left) - var(--black-w)/2);
+  }
+  .key.black.active{
+    background:linear-gradient(180deg,#2a2f3a,#141822);
+    box-shadow:
+      inset 0 -4px 0 rgba(0,0,0,.5),
+      0 0 0 2px rgba(79,140,255,.25),
+      0 8px 16px rgba(79,140,255,.25);
+    border-color:#1b2030;
+  }
+
+  .label{
+    position:absolute; bottom:6px; left:0; right:0; text-align:center;
+    font-size:11px; color:#445; pointer-events:none;
+  }
+  .key.white .label .note{color:#334}
+  .key.white .label .kbd{display:block; color:#667085; font-size:10px; margin-top:2px}
+
+  .status{
+    margin-top:10px; font-size:12px; color:var(--muted);
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+
+  @media (max-width:520px){
+    .controls{gap:8px}
+    .control{padding:7px 8px}
+    .range{width:120px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">
+      <h1>浏览器钢琴</h1>
+      <span class="badge">WebAudio • 多点触控 • 键盘映射</span>
+    </div>
+    <div class="controls">
+      <div class="control">
+        <label for="wave">波形</label>
+        <select id="wave" class="select">
+          <option value="sine">正弦</option>
+          <option value="triangle" selected>三角</option>
+          <option value="square">方波</option>
+          <option value="sawtooth">锯齿</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="volume">音量</label>
+        <input id="volume" class="range" type="range" min="0" max="100" value="70" />
+      </div>
+      <div class="control">
+        <label>延音</label>
+        <div id="sustain" class="toggle" role="switch" aria-checked="false" tabindex="0" data-on="false" title="按住时松键仍持续发声"></div>
+      </div>
+      <div class="control">
+        <button id="octDown" class="btn" title="键盘映射起始八度 -1">[-]</button>
+        <span>键盘八度：<span id="kbdOct">4</span></span>
+        <button id="octUp" class="btn" title="键盘映射起始八度 +1">[+]</button>
+      </div>
+      <div class="control">
+        <button id="panic" class="btn" title="立刻停止所有发声">停止所有</button>
+      </div>
+    </div>
+    <div class="hint">
+      键盘（C4~B4）：<span class="kbd-badge">Z S X D C V G B H N J M</span> | （C5~B5）：<span class="kbd-badge">Q 2 W 3 E R 5 T 6 Y 7 U</span> | 用 <span class="kbd-badge">[</span> / <span class="kbd-badge">]</span> 调整八度
+    </div>
+  </header>
+
+  <div class="piano-wrap">
+    <div id="piano" aria-label="钢琴键盘" role="application"></div>
+    <div class="status">
+      <span>状态：<span id="statusText">等待操作</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- 初始界面已完全移除 -->
+
+<script>
+(function(){
+  'use strict';
+
+  // 配置
+  const OCT_FIRST = 3;
+  const OCT_LAST  = 5;
+  const INIT_KBD_OCT = 4;
+  const MAX_VOICES = 48;
+  const ADSR = { a:0.002, d:0.14, s:0.75, r:0.25 };
+  const LOOK = { showKeyLabels:true };
+
+  // 音频引擎
+  let audioCtx = null;
+  let masterGain = null;
+  let compressor = null;
+  let started = false;
+
+  const state = {
+    waveform: 'triangle',
+    volume: 0.7,
+    sustain: false,
+    kbdBaseOct: INIT_KBD_OCT,
+    activeVoices: new Map(),
+    heldByPointer: new Map(),
+    heldByKey: new Map(),
+    sustained: new Set(),
+  };
+
+  const statusEl = document.getElementById('statusText');
+
+  function setStatus(s){ statusEl.textContent = s; }
+
+  function ensureAudio(){
+    // 如果已经启动，或者正在启动中，则直接返回
+    if (started) return;
+
+    // 尝试初始化 AudioContext
+    if (!audioCtx) {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) throw new Error("浏览器不支持 Web Audio API");
+        
+        audioCtx = new AudioContext();
+
+        // 成功创建后，立即尝试恢复（这是关键的用户交互步骤）
+        audioCtx.resume().then(() => {
+            // 设置所有音频节点
+            compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.value = -18;
+            compressor.knee.value = 24;
+            compressor.ratio.value = 6;
+            compressor.attack.value = 0.003;
+            compressor.release.value = 0.15;
+
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = state.volume;
+            masterGain.connect(compressor).connect(audioCtx.destination);
+            
+            // 标记为已成功启动
+            started = true;
+            setStatus('音频已启用');
+            console.log('Audio context started successfully.');
+        }).catch(e => {
+            console.error("恢复 AudioContext 失败:", e);
+            setStatus(`音频错误: ${e.message}`);
+        });
+
+      } catch (e) {
+        console.error("创建 AudioContext 失败: ", e);
+        setStatus(`音频错误: ${e.message}. 请确保使用本地服务器访问页面。`);
+      }
+    }
+  }
+
+  // UI 绑定
+  const waveSel = document.getElementById('wave');
+  const volRange = document.getElementById('volume');
+  const sustainTgl = document.getElementById('sustain');
+  const octDown = document.getElementById('octDown');
+  const octUp   = document.getElementById('octUp');
+  const kbdOctEl= document.getElementById('kbdOct');
+  const panicBtn= document.getElementById('panic');
+
+  waveSel.addEventListener('change', e => {
+    state.waveform = e.target.value;
+    setStatus('波形：' + e.target.options[e.target.selectedIndex].textContent);
+  });
+
+  volRange.addEventListener('input', e => {
+    state.volume = Number(e.target.value)/100;
+    if (masterGain) masterGain.gain.setTargetAtTime(state.volume, audioCtx.currentTime, 0.01);
+  });
+
+  function setSustain(on){
+    state.sustain = !!on;
+    sustainTgl.dataset.on = String(on);
+    sustainTgl.setAttribute('aria-checked', on ? 'true' : 'false');
+    if (!on) {
+      for (const noteId of Array.from(state.sustained)) {
+        if (![...state.heldByPointer.values(), ...state.heldByKey.values()].includes(noteId)) {
+          stopNote(noteId);
+        }
+        state.sustained.delete(noteId);
+      }
+    }
+  }
+  sustainTgl.addEventListener('click', ()=> setSustain(!state.sustain));
+  sustainTgl.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setSustain(!state.sustain); }
+  });
+
+  function setKbdBaseOct(oct){
+    oct = Math.max(1, Math.min(7, oct));
+    state.kbdBaseOct = oct;
+    kbdOctEl.textContent = String(oct);
+  }
+  octDown.addEventListener('click', ()=> setKbdBaseOct(state.kbdBaseOct - 1));
+  octUp.addEventListener('click',   ()=> setKbdBaseOct(state.kbdBaseOct + 1));
+
+  panicBtn.addEventListener('click', allNotesOff);
+
+  const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  function midiToFreq(m){ return 440 * Math.pow(2, (m - 69)/12); }
+  function noteId(oct, semitone){ return `${NOTE_NAMES[semitone]}${oct}`; }
+  function parseNoteId(id){
+    const match = id.match(/^([A-G]#?)(-?\d+)$/);
+    if (!match) return null;
+    const name = match[1], oct = Number(match[2]);
+    const semitone = NOTE_NAMES.indexOf(name);
+    return { oct, semitone };
+  }
+  function noteToMidi(oct, semitone){ return (oct + 1) * 12 + semitone; }
+
+  const pianoEl = document.getElementById('piano');
+  const blackPosIndex = { 1:1, 3:2, 6:4, 8:5, 10:6 };
+
+  function createKey({oct, semitone, isBlack, kbdHint}) {
+    const id = noteId(oct, semitone);
+    const key = document.createElement('div');
+    key.className = `key ${isBlack?'black':'white'}`;
+    key.dataset.note = id;
+    key.setAttribute('role', 'button');
+    key.setAttribute('aria-label', id);
+    key.setAttribute('tabindex', '-1');
+
+    if (isBlack) {
+      const leftIdx = blackPosIndex[semitone];
+      key.style.setProperty('--left', leftIdx);
+    }
+
+    if (!isBlack && LOOK.showKeyLabels){
+      const lab = document.createElement('div');
+      lab.className = 'label';
+      const noteSpan = document.createElement('span');
+      noteSpan.className = 'note';
+      noteSpan.textContent = id;
+      lab.appendChild(noteSpan);
+
+      if (kbdHint){
+        const hint = document.createElement('span');
+        hint.className = 'kbd';
+        hint.textContent = kbdHint;
+        lab.appendChild(hint);
+      }
+      key.appendChild(lab);
+    }
+
+    key.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      ensureAudio(); // 尝试启动音频
+      if (!started) return; // 如果音频没准备好，不发声
+      key.setPointerCapture(e.pointerId);
+      startNote(id, { source:'pointer', token:e.pointerId });
+      state.heldByPointer.set(e.pointerId, id);
+      key.classList.add('active');
+    });
+    key.addEventListener('pointerup', e => {
+      e.preventDefault();
+      if (!started) return;
+      const held = state.heldByPointer.get(e.pointerId);
+      if (held) {
+        releaseNote(held, { source:'pointer', token:e.pointerId });
+        state.heldByPointer.delete(e.pointerId);
+        if (!state.sustain) key.classList.remove('active');
+      }
+    });
+    key.addEventListener('lostpointercapture', e => {
+      if (!started) return;
+      const held = state.heldByPointer.get(e.pointerId);
+      if (held) {
+        releaseNote(held, { source:'pointer', token:e.pointerId });
+        state.heldByPointer.delete(e.pointerId);
+        if (!state.sustain) key.classList.remove('active');
+      }
+    });
+    key.addEventListener('pointercancel', e => {
+      if (!started) return;
+      const held = state.heldByPointer.get(e.pointerId);
+      if (held) {
+        releaseNote(held, { source:'pointer', token:e.pointerId });
+        state.heldByPointer.delete(e.pointerId);
+        if (!state.sustain) key.classList.remove('active');
+      }
+    });
+
+    return key;
+  }
+
+  function buildOctave(oct, hintsMap){
+    const octWrap = document.createElement('div');
+    octWrap.className = 'octave';
+    octWrap.style.width = `calc(var(--white-w) * 7)`;
+
+    const whites = document.createElement('div');
+    whites.className = 'whites';
+    const blacks = document.createElement('div');
+    blacks.className = 'blacks';
+
+    const whiteSemis = [0,2,4,5,7,9,11];
+    for (const s of whiteSemis) {
+      const hint = hintsMap?.[noteId(oct, s)] || '';
+      const k = createKey({oct, semitone:s, isBlack:false, kbdHint:hint});
+      whites.appendChild(k);
+    }
+
+    const blackSemis = [1,3,6,8,10];
+    for (const s of blackSemis) {
+      const k = createKey({oct, semitone:s, isBlack:true});
+      blacks.appendChild(k);
+    }
+
+    octWrap.appendChild(whites);
+    octWrap.appendChild(blacks);
+    return octWrap;
+  }
+
+  function buildKbdHints(baseOct){
+    const hints = {};
+    const mapLow  = ['Z','S','X','D','C','V','G','B','H','N','J','M'];
+    const mapHigh = ['Q','2','W','3','E','R','5','T','6','Y','7','U'];
+    const seq = [0,1,2,3,4,5,6,7,8,9,10,11];
+    seq.forEach((semi,i)=>{
+      const id = noteId(baseOct, semi);
+      hints[id] = mapLow[i] || '';
+    });
+    seq.forEach((semi,i)=>{
+      const id = noteId(baseOct+1, semi);
+      hints[id] = mapHigh[i] || '';
+    });
+    return hints;
+  }
+
+  function renderKeyboard(){
+    pianoEl.innerHTML = '';
+    const hints = buildKbdHints(state.kbdBaseOct);
+
+    for (let oct = OCT_FIRST; oct <= OCT_LAST; oct++){
+      const octEl = buildOctave(oct, hints);
+      pianoEl.appendChild(octEl);
+    }
+  }
+
+  renderKeyboard();
+
+  function startNote(noteId, {source, token}={}){
+    if (!audioCtx || audioCtx.state !== 'running') return;
+
+    if (state.activeVoices.size >= MAX_VOICES){
+      const [oldestId] = [...state.activeVoices.entries()].sort((a,b)=>a[1].whenOn - b[1].whenOn)[0] || [];
+      if (oldestId) stopNote(oldestId);
+    }
+
+    const parsed = parseNoteId(noteId);
+    if (!parsed) return;
+    const midi = noteToMidi(parsed.oct, parsed.semitone);
+    const freq = midiToFreq(midi);
+
+    let voice = state.activeVoices.get(noteId);
+    if (!voice){
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      osc.type = state.waveform;
+
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.0001;
+
+      osc.connect(gain).connect(masterGain);
+
+      const peak = 0.85;
+      const sus  = ADSR.s;
+      const t0 = now;
+      gain.gain.cancelScheduledValues(t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.linearRampToValueAtTime(peak, t0 + ADSR.a);
+      gain.gain.linearRampToValueAtTime(peak * sus, t0 + ADSR.a + ADSR.d);
+
+      osc.frequency.setValueAtTime(freq, now);
+      osc.start(now);
+
+      voice = {
+        osc, gain, whenOn: now, heldBy: new Set(),
+      };
+      state.activeVoices.set(noteId, voice);
+      highlightKey(noteId, true);
+    }
+
+    if (source && token !== undefined) {
+      voice.heldBy.add(source+':'+token);
+    }
+  }
+
+  function releaseNote(noteId, {source, token}={}){
+    const v = state.activeVoices.get(noteId);
+    if (!v) return;
+
+    if (source && token !== undefined) {
+      v.heldBy.delete(source+':'+token);
+    }
+    const stillHeld = v.heldBy.size > 0;
+
+    if (stillHeld) return;
+
+    if (state.sustain){
+      state.sustained.add(noteId);
+      return;
+    }
+
+    stopNote(noteId);
+  }
+
+  function stopNote(noteId){
+    const v = state.activeVoices.get(noteId);
+    if (!v) return;
+    const now = audioCtx.currentTime;
+    const endT = now + ADSR.r;
+    try {
+      v.gain.gain.cancelScheduledValues(now);
+      const current = v.gain.gain.value;
+      v.gain.gain.setValueAtTime(current, now);
+      v.gain.gain.linearRampToValueAtTime(0.0001, endT);
+    } catch (e) {}
+
+    setTimeout(()=>{
+      try { v.osc.stop(); } catch(e){}
+      try { v.osc.disconnect(); v.gain.disconnect(); } catch(e){}
+    }, Math.ceil(ADSR.r*1000)+8);
+
+    state.activeVoices.delete(noteId);
+    state.sustained.delete(noteId);
+    highlightKey(noteId, false);
+  }
+
+  function allNotesOff(){
+    if (!started) return;
+    for (const id of Array.from(state.activeVoices.keys())){
+      stopNote(id);
+    }
+    state.heldByPointer.clear();
+    state.heldByKey.clear();
+    state.sustained.clear();
+    setStatus('已停止所有发声');
+  }
+
+  function highlightKey(noteId, on){
+    const el = pianoEl.querySelector(`.key[data-note="${noteId}"]`);
+    if (!el) return;
+    if (on) el.classList.add('active'); else el.classList.remove('active');
+  }
+
+  const KBD_MAP = (() => {
+    const low  = ['z','s','x','d','c','v','g','b','h','n','j','m'];
+    const high = ['q','2','w','3','e','r','5','t','6','y','7','u'];
+    const map = new Map();
+    for (let i=0;i<12;i++) map.set(low[i], { semi:i, relOct:0 });
+    for (let i=0;i<12;i++) map.set(high[i], { semi:i, relOct:1 });
+    return map;
+  })();
+
+  window.addEventListener('keydown', e => {
+    const key = e.key.toLowerCase();
+    if (key === '['){ setKbdBaseOct(state.kbdBaseOct - 1); return; }
+    if (key === ']'){ setKbdBaseOct(state.kbdBaseOct + 1); return; }
+    if (key === ' '){ e.preventDefault(); setSustain(true); return; }
+
+    const map = KBD_MAP.get(key);
+    if (!map) return;
+
+    e.preventDefault();
+    ensureAudio(); // 尝试启动音频
+    if (!started) return;
+
+    if (state.heldByKey.has(key)) return;
+
+    const oct = state.kbdBaseOct + map.relOct;
+    const id = noteId(oct, map.semi);
+    state.heldByKey.set(key, id);
+    startNote(id, { source:'kbd', token:key });
+  });
+
+  window.addEventListener('keyup', e => {
+    const key = e.key.toLowerCase();
+    if (key === ' '){ setSustain(false); return; }
+
+    const noteIdHeld = state.heldByKey.get(key);
+    if (!noteIdHeld) return;
+    e.preventDefault();
+    releaseNote(noteIdHeld, { source:'kbd', token:key });
+    state.heldByKey.delete(key);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      allNotesOff();
+      if (state.sustain) {
+        setSustain(false);
+      }
+    }
+  });
+  window.addEventListener('pagehide', allNotesOff);
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Three.js 明亮餐厅内景 Demo</title>
+<style>
+  html,body{height:100%;margin:0;background:#eef1f4;}
+  #app{position:fixed;inset:0;}
+  .hint{
+    position:fixed;left:12px;bottom:12px;padding:8px 10px;border-radius:8px;
+    background:rgba(255,255,255,.85);border:1px solid #dbe1e8;font:12px/1.6 system-ui,"PingFang SC","Microsoft YaHei";
+    color:#334155
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://unpkg.com/lil-gui@0.18/dist/lil-gui.esm.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div class="hint">左键旋转 / 滚轮缩放 / 右键平移 · GUI 右上角</div>
+
+<script type="module">
+/** ========== 基础：渲染器 / 场景 / 相机 / 控制器 ========== */
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { GUI } from 'lil-gui';
+
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2; // 初始更亮
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#eef1f4'); // 明亮背景
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(-9, 4, 12);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.minDistance = 5;
+controls.maxDistance = 26;
+controls.maxPolarAngle = Math.PI * 0.49; // 避免看到天花板外侧
+controls.target.set(0, 1.3, 0);
+
+/** ========== 参数（可 GUI 调整） ========== */
+const params = {
+  mode: 'Day',            // Day / Night
+  brandColor: '#d43a3a',  // 餐厅主色（用于菜单/吧台点缀）
+  title: '怡味轩',
+  tagline: '精做川味 · 现炒小菜',
+  exposure: 1.2
+};
+
+/** ========== 工具函数：程序纹理与文本贴图 ========== */
+/* 木地板纹理：用 Canvas 画木纹+拼板线。 */
+function makeWoodTexture(size=1024, boards=12){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  // 基底（浅橡木）
+  const grd = ctx.createLinearGradient(0,0,size,0);
+  grd.addColorStop(0,'#d9c5a1');
+  grd.addColorStop(1,'#e7d2ad');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0,0,size,size);
+
+  // 木纹（细噪+波纹）
+  for(let y=0;y<size;y++){
+    const alpha = 0.05 + 0.05*Math.sin(y*0.03);
+    ctx.fillStyle = `rgba(120,90,40,${alpha})`;
+    ctx.fillRect(0,y,size,1);
+  }
+  // 拼板分割线
+  const bw = Math.floor(size/boards);
+  ctx.strokeStyle = 'rgba(90,70,40,.35)';
+  ctx.lineWidth = 2;
+  for(let i=1;i<boards;i++){
+    const x = i*bw + (i%2?6:-6);
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,size); ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(4,3);
+  tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/* 菜单板贴图：动态写入店名与菜名（示例）。 */
+function makeMenuTexture({title, tagline, color='#222', brand='#d43a3a', w=1024, h=1536}){
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle = brand; ctx.fillRect(0,0,w,140);
+  ctx.fillStyle = '#fff'; ctx.font = `bold 56px "Noto Sans SC","Microsoft YaHei"`;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillText(title, w/2, 70);
+
+  ctx.fillStyle = color; ctx.textAlign='left';
+  ctx.font = `bold 34px "Noto Sans SC","Microsoft YaHei"`;
+  ctx.fillText(tagline, 24, 190);
+
+  ctx.font = `28px "Noto Sans SC","Microsoft YaHei"`;
+  const items = [
+    ['口水鸡', 26], ['夫妻肺片', 28], ['担担面', 16], ['毛血旺', 48],
+    ['宫保鸡丁', 32], ['鱼香肉丝', 28], ['回锅肉', 32], ['麻婆豆腐', 22],
+    ['剁椒鱼头', 58], ['酸菜鱼', 52], ['辣子鸡', 36], ['蒜蓉生菜', 18]
+  ];
+  let y = 240; const lineH = 52;
+  items.forEach(([name,price],i)=>{
+    ctx.fillStyle = i%2? 'rgba(0,0,0,.04)' : 'transparent';
+    ctx.fillRect(12, y-28, w-24, lineH);
+    ctx.fillStyle = '#1f2937';
+    ctx.fillText(name, 24, y);
+    ctx.textAlign='right';
+    ctx.fillText(`¥ ${price}`, w-24, y);
+    ctx.textAlign='left';
+    y += lineH;
+  });
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/** ========== 场景：房间、窗户、吧台、菜单墙 ========== */
+const room = new THREE.Group();
+scene.add(room);
+
+// 地面
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(12, 8),
+  new THREE.MeshStandardMaterial({ map: makeWoodTexture(), roughness:0.8, metalness:0.05 })
+);
+floor.rotation.x = -Math.PI/2;
+floor.position.y = 0;
+floor.receiveShadow = true;
+room.add(floor);
+
+// 天花（浅色提高反射）
+const ceiling = new THREE.Mesh(
+  new THREE.PlaneGeometry(12, 8),
+  new THREE.MeshStandardMaterial({ color:'#f7fafc', roughness:0.9 })
+);
+ceiling.rotation.x = Math.PI/2;
+ceiling.position.y = 3.2;
+room.add(ceiling);
+
+// 墙体：前墙（有门），左墙（大窗），后墙（菜单+吧台），右墙（纯）。
+function wallWithHoles(width, height, color, holes=[]){
+  // 算法：用 Shape 定义矩形墙，再 pushRect 作为 hole 挖洞
+  const s = new THREE.Shape();
+  const hw=width/2, hh=height/2;
+  s.moveTo(-hw,-hh); s.lineTo(hw,-hh); s.lineTo(hw,hh); s.lineTo(-hw,hh); s.closePath();
+  holes.forEach(([x,y,w,h])=>{
+    const r = new THREE.Path();
+    r.moveTo(x, y); r.lineTo(x+w, y); r.lineTo(x+w, y+h); r.lineTo(x, y+h); r.closePath();
+    s.holes.push(r);
+  });
+  const geo = new THREE.ShapeGeometry(s);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness:0.9 }));
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  return mesh;
+}
+
+// 前墙：中间开门（宽1m×高2.2m）
+const frontWall = wallWithHoles(12, 3.2, '#f5f7fb', [[-0.5, -1.6, 1.0, 2.2]]);
+frontWall.position.set(0, 1.6, 4); // 房间前沿 Z=+4
+room.add(frontWall);
+
+// 左墙：大窗（宽4m×高1.8m）
+const leftWall = wallWithHoles(8, 3.2, '#f5f7fb', [[-2, -0.6, 4, 1.8]]);
+leftWall.rotation.y = Math.PI/2;
+leftWall.position.set(-6, 1.6, 0);
+room.add(leftWall);
+
+// 右墙：无洞
+const rightWall = wallWithHoles(8, 3.2, '#f5f7fb');
+rightWall.rotation.y = -Math.PI/2;
+rightWall.position.set(6, 1.6, 0);
+room.add(rightWall);
+
+// 后墙：菜单与吧台所在
+const backWall = wallWithHoles(12, 3.2, '#eef2f7');
+backWall.position.set(0, 1.6, -4);
+room.add(backWall);
+
+// 简易吧台
+const bar = new THREE.Mesh(
+  new THREE.BoxGeometry(4.8, 1.05, 0.6),
+  new THREE.MeshStandardMaterial({ color:'#ffffff', roughness:0.6, metalness:0.1 })
+);
+bar.position.set(0, 0.525, -3.2);
+bar.castShadow = true; bar.receiveShadow = true;
+room.add(bar);
+
+// 吧台木饰面条
+const barTop = new THREE.Mesh(
+  new THREE.BoxGeometry(4.9, 0.08, 0.7),
+  new THREE.MeshStandardMaterial({ map: makeWoodTexture(1024,8), roughness:0.5, metalness:0.05 })
+);
+barTop.position.set(0, 1.09, -3.2);
+barTop.castShadow = true;
+room.add(barTop);
+
+// 菜单板（两块）
+const menuTex = makeMenuTexture({ title: params.title, tagline: params.tagline, brand: params.brandColor });
+function menuBoard(x){
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.2, 1.8),
+    new THREE.MeshStandardMaterial({ map: menuTex, roughness:0.8, metalness:0.0 })
+  );
+  m.position.set(x, 2.1, -3.99);
+  return m;
+}
+room.add(menuBoard(-1.0), menuBoard(1.0));
+
+/** ========== 家具：桌子（圆角矩形挤出）与椅子（InstancedMesh） ========== */
+function roundedRectShape(w,h,r){
+  const s = new THREE.Shape();
+  const hw=w/2, hh=h/2, rr=Math.min(r, hw, hh);
+  s.absarc(-hw+rr,-hh+rr, rr, Math.PI, Math.PI*1.5);
+  s.absarc(hw-rr,-hh+rr, rr, Math.PI*1.5, 0);
+  s.absarc(hw-rr, hh-rr, rr, 0, Math.PI*0.5);
+  s.absarc(-hw+rr, hh-rr, rr, Math.PI*0.5, Math.PI);
+  s.closePath();
+  return s;
+}
+
+function makeTable(w=1.2, h=0.75, d=0.7, radius=0.08){
+  // 台面
+  const shape = roundedRectShape(w, d, radius);
+  const top = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled:false }),
+    new THREE.MeshStandardMaterial({ map: makeWoodTexture(1024,6), roughness:0.6, metalness:0.05 })
+  );
+  top.position.y = h;
+  top.castShadow = true; top.receiveShadow = true;
+
+  // 桌脚（四脚）
+  const legMat = new THREE.MeshStandardMaterial({ color:'#b2b8be', roughness:0.4, metalness:0.8 });
+  const legGeo = new THREE.CylinderGeometry(0.03, 0.03, h-0.02, 16);
+  const legs = new THREE.Group();
+  const offX = (w/2 - 0.08), offZ = (d/2 - 0.08);
+  [[ offX, offZ],[ offX,-offZ],[-offX, offZ],[-offX,-offZ]].forEach(([x,z])=>{
+    const leg = new THREE.Mesh(legGeo, legMat);
+    leg.position.set(x, (h-0.02)/2, z);
+    leg.castShadow = true; leg.receiveShadow = true;
+    legs.add(leg);
+  });
+
+  const g = new THREE.Group();
+  g.add(top, legs);
+  return g;
+}
+
+// 简易椅子（低模）：座面 + 靠背 + 四腿
+function makeChairMesh(){
+  const matSeat = new THREE.MeshStandardMaterial({ color:'#f6f8fa', roughness:0.8 });
+  const matLeg  = new THREE.MeshStandardMaterial({ color:'#b2b8be', roughness:0.4, metalness:0.8 });
+
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.44), matSeat);
+  seat.position.set(0, 0.46, 0);
+  seat.castShadow = true; seat.receiveShadow = true;
+
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.42, 0.04), matSeat);
+  back.position.set(0, 0.67, -0.20);
+  back.castShadow = true; back.receiveShadow = true;
+
+  const legGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.46, 12);
+  const legs = new THREE.Group();
+  [[0.19,0.19],[0.19,-0.19],[-0.19,0.19],[-0.19,-0.19]].forEach(([x,z])=>{
+    const leg = new THREE.Mesh(legGeo, matLeg);
+    leg.position.set(x, 0.23, z);
+    leg.castShadow = true; leg.receiveShadow = true;
+    legs.add(leg);
+  });
+
+  const g = new THREE.Group(); g.add(seat, back, legs);
+  return g;
+}
+
+// 椅子用 InstancedMesh 批量放置
+const chairProto = makeChairMesh();
+const CHAIR_COUNT = 40;
+const chairGeo = new THREE.BoxGeometry(0.001,0.001,0.001); // 占位，无用；我们直接克隆 proto
+// 用普通 Group 克隆更直观（为了易读，这里不用 InstancedMesh，避免矩阵管理困扰你修改）
+function placeChairsAroundTable(table, count=4, radius=0.55){
+  const chairs = new THREE.Group();
+  for(let i=0;i<count;i++){
+    const ch = chairProto.clone(true);
+    const ang = (i/count) * Math.PI*2;
+    ch.position.set( Math.cos(ang)*radius, 0, Math.sin(ang)*radius );
+    ch.rotation.y = -ang + Math.PI;
+    chairs.add(ch);
+  }
+  const g = new THREE.Group();
+  g.add(table, chairs);
+  return g;
+}
+
+// 布局：3 组四人桌（靠窗两组）、2 组两人桌（中部）
+const tables = new THREE.Group();
+function addTableGroup(x,z, isFour=true){
+  const t = makeTable(isFour?1.2:0.9, 0.75, isFour?0.7:0.6, 0.08);
+  const group = placeChairsAroundTable(t, isFour?4:2, isFour?0.62:0.52);
+  group.position.set(x,0,z);
+  tables.add(group);
+}
+// 左窗边两组
+addTableGroup(-3.5,  1.2, true);
+addTableGroup(-3.5, -1.5, true);
+// 中部两人桌
+addTableGroup(0.0,  1.0, false);
+addTableGroup(0.0, -1.0, false);
+// 右侧一组四人桌
+addTableGroup(3.5,  0.0, true);
+
+room.add(tables);
+
+/** ========== 灯光系统：Day / Night 两套，GUI 切换 ========== */
+RectAreaLightUniformsLib.init();
+
+// 天空光 + 太阳（day）
+const hemi = new THREE.HemisphereLight(0xbcd6ff, 0xf6f1e8, 0.7);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.9);
+sun.position.set(-8, 10, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-10; sun.shadow.camera.right=10;
+sun.shadow.camera.top=10; sun.shadow.camera.bottom=-10;
+scene.add(sun);
+
+// 窗内漫射面光（day）：模拟窗外天空的柔光
+const windowFill = new THREE.RectAreaLight(0xffffff, 4.0, 4, 1.8);
+windowFill.position.set(-5.95, 1.5, 0);
+windowFill.rotation.y = Math.PI/2;
+scene.add(windowFill);
+
+// 顶面矩形灯（night）
+const ceilingLights = [];
+const gridPos = [[-3, 2.9, -2.5],[3, 2.9, -2.5],[-3, 2.9, 1.5],[3, 2.9, 1.5]];
+gridPos.forEach(([x,y,z])=>{
+  const rect = new THREE.RectAreaLight(0xfff2de, 3.2, 2.0, 1.0); // 暖白 3000–3500K 观感
+  rect.position.set(x,y,z); rect.lookAt(x,0,z);
+  ceilingLights.push(rect); scene.add(rect);
+});
+
+// 餐桌吊灯（night）
+const pendants = [];
+[[ -3.5, 1.2],[ -3.5,-1.5],[0,1.0],[0,-1.0],[3.5,0]].forEach(([x,z])=>{
+  const p = new THREE.PointLight(0xffe7c6, 0.9, 3.2, 2.0);
+  p.position.set(x, 2.4, z);
+  p.castShadow = true;
+  pendants.push(p); scene.add(p);
+
+  // 灯罩
+  const shade = new THREE.Mesh(
+    new THREE.ConeGeometry(0.22, 0.24, 24, 1, true),
+    new THREE.MeshStandardMaterial({ color:'#f1f5f9', roughness:0.4, side:THREE.DoubleSide })
+  );
+  shade.position.set(x, 2.55, z);
+  shade.rotation.x = Math.PI;
+  scene.add(shade);
+});
+
+/* 模式切换：本质是开关不同光源 + 替换背景/曝光 */
+function setMode(mode){
+  const isDay = mode === 'Day';
+  hemi.intensity = isDay ? 0.7 : 0.2;
+  sun.intensity  = isDay ? 1.9 : 0.0;
+  windowFill.intensity = isDay ? 4.0 : 0.0;
+
+  ceilingLights.forEach(l=> l.intensity = isDay ? 0.0 : 3.2);
+  pendants.forEach(l=> l.intensity = isDay ? 0.0 : 0.9);
+
+  scene.background.set(isDay ? '#eef1f4' : '#0f1115');
+  renderer.toneMappingExposure = isDay ? params.exposure : Math.max(1.0, params.exposure-0.1);
+}
+setMode('Day');
+
+/** ========== GUI 控制台 ========== */
+const gui = new GUI({ title:'餐厅参数' });
+gui.domElement.style.position = 'fixed';
+gui.domElement.style.right = '12px';
+gui.domElement.style.top = '12px';
+
+gui.add(params, 'mode', ['Day','Night']).name('模式').onChange(setMode);
+gui.add(params, 'exposure', 0.8, 1.8, 0.01).name('曝光').onChange(v=>{
+  renderer.toneMappingExposure = v;
+});
+gui.addColor(params, 'brandColor').name('主色').onChange(v=>{
+  // 更新菜单主色
+  const tex = makeMenuTexture({ title: params.title, tagline: params.tagline, brand: v });
+  scene.remove(...room.children.filter(o=>o.userData.menu));
+});
+gui.add(params, 'title').name('店名').onFinishChange(v=>{
+  // 重新绘制菜单贴图（简单起见，重新创建板）
+  const newTex = makeMenuTexture({ title: v, tagline: params.tagline, brand: params.brandColor });
+  room.children.forEach(o=>{
+    if(o.isMesh && o.geometry.type==='PlaneGeometry' && o.position.z === -3.99){
+      o.material.map = newTex; o.material.needsUpdate = true;
+    }
+  });
+});
+gui.add(params, 'tagline').name('副标题').onFinishChange(v=>{
+  const newTex = makeMenuTexture({ title: params.title, tagline: v, brand: params.brandColor });
+  room.children.forEach(o=>{
+    if(o.isMesh && o.geometry.type==='PlaneGeometry' && o.position.z === -3.99){
+      o.material.map = newTex; o.material.needsUpdate = true;
+    }
+  });
+});
+
+/** ========== 渲染循环与自适应 ========== */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+(function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+})();
+</script>
+</body>
+</html>

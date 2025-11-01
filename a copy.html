@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom 归一化流程 Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #1a253c;
+            margin-bottom: 20px;
+        }
+        .process-flow {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .arrow {
+            color: #764ba2;
+        }
+        .panels {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 25px;
+        }
+        .panel {
+            background: #fff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.07);
+            border-top: 4px solid #667eea;
+        }
+        .panel h2 {
+            margin-top: 0;
+            color: #1a253c;
+            border-bottom: 1px solid #eef2f5;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+        }
+        .panel h2 .step-circle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background-color: #667eea;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            margin-right: 12px;
+        }
+        #panel-normalized { border-top-color: #764ba2; }
+        #panel-normalized h2 .step-circle { background-color: #764ba2; }
+        #panel-target { border-top-color: #28a745; }
+        #panel-target h2 .step-circle { background-color: #28a745; }
+        
+        .control-group { margin-bottom: 15px; }
+        .control-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .control-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .input-group { display: flex; gap: 10px; }
+        
+        .result-field {
+            background-color: #e9ecef;
+            font-weight: bold;
+            color: #495057;
+        }
+        #normalizedZoomResult { color: #764ba2; }
+        #finalZoomResult { color: #28a745; }
+
+        .visual-preview {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px dashed #ddd;
+        }
+        .visual-preview h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 16px;
+            text-align: center;
+        }
+        .screen {
+            border: 2px solid #333;
+            background: #f0f0f0;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            height: 120px; /* Fixed height for consistent preview */
+        }
+        .element {
+            width: 100px;
+            height: 60px;
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            border-radius: 6px;
+            transform-origin: center center;
+            transition: zoom 0.3s ease;
+        }
+        #normalizedElement { background: linear-gradient(135deg, #764ba2, #667eea); }
+        #targetElement { background: linear-gradient(135deg, #28a745, #218838); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Zoom 归一化工作流 Demo</h1>
+        <div class="process-flow">
+            <span>设计稿</span>
+            <span class="arrow">➔</span>
+            <span>归一化 (1080p, DPR 1)</span>
+            <span class="arrow">➔</span>
+            <span>用户端</span>
+        </div>
+
+        <div class="panels">
+            <!-- Panel 1: Source Design -->
+            <div class="panel" id="panel-source">
+                <h2><span class="step-circle">1</span>设计输入 (源)</h2>
+                <div class="control-group">
+                    <label>分辨率 (物理像素)</label>
+                    <div class="input-group">
+                        <input type="number" id="sourceWidth" value="3840">
+                        <input type="number" id="sourceHeight" value="2160">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>设备像素比 (DPR)</label>
+                    <input type="number" id="sourceDPR" value="1" step="0.1">
+                </div>
+                <div class="control-group">
+                    <label>设置的 Zoom 值</label>
+                    <input type="number" id="sourceZoom" value="1.5" step="0.1">
+                </div>
+                <div class="visual-preview">
+                    <h3>源设备预览</h3>
+                    <div class="screen" id="sourceScreen">
+                        <div class="element" id="sourceElement"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 2: Normalization -->
+            <div class="panel" id="panel-normalized">
+                <h2><span class="step-circle">2</span>归一化处理</h2>
+                <p>将源设置换算为通用基准 (1920x1080, DPR 1) 下的等效 Zoom 值。</p>
+                <div class="control-group">
+                    <label>归一化 Zoom (此值用于存储)</label>
+                    <input type="text" id="normalizedZoomResult" class="result-field" readonly>
+                </div>
+                <div class="visual-preview">
+                    <h3>通用基准预览</h3>
+                    <div class="screen" id="normalizedScreen">
+                        <div class="element" id="normalizedElement"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 3: Target Application -->
+            <div class="panel" id="panel-target">
+                <h2><span class="step-circle">3</span>用户端应用 (目标)</h2>
+                <p>使用归一化 Zoom，为用户的实际设备计算最终 Zoom。</p>
+                <div class="control-group">
+                    <label>用户设备分辨率</label>
+                    <div class="input-group">
+                        <input type="number" id="targetWidth" value="1920">
+                        <input type="number" id="targetHeight" value="1080">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>用户设备 DPR</label>
+                    <input type="number" id="targetDPR" value="1.3" step="0.1">
+                </div>
+                <div class="control-group">
+                    <label>最终应用的 Zoom 值</label>
+                    <input type="text" id="finalZoomResult" class="result-field" readonly>
+                </div>
+                <div class="visual-preview">
+                    <h3>目标设备预览</h3>
+                    <div class="screen" id="targetScreen">
+                        <div class="element" id="targetElement"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. 定义和获取DOM元素 ---
+        const elements = {
+            // Source Panel
+            sourceWidth: document.getElementById('sourceWidth'),
+            sourceHeight: document.getElementById('sourceHeight'),
+            sourceDPR: document.getElementById('sourceDPR'),
+            sourceZoom: document.getElementById('sourceZoom'),
+            sourceElement: document.getElementById('sourceElement'),
+            // Normalized Panel
+            normalizedZoomResult: document.getElementById('normalizedZoomResult'),
+            normalizedElement: document.getElementById('normalizedElement'),
+            // Target Panel
+            targetWidth: document.getElementById('targetWidth'),
+            targetHeight: document.getElementById('targetHeight'),
+            targetDPR: document.getElementById('targetDPR'),
+            finalZoomResult: document.getElementById('finalZoomResult'),
+            targetElement: document.getElementById('targetElement'),
+        };
+
+        // --- 2. 核心函数 ---
+        const UNIVERSAL_BASE = { width: 1920, height: 1080, dpr: 1 };
+
+        function calculateZoom(baseW, baseH, baseDPR, baseZoom, targetW, targetH, targetDPR) {
+            if (baseDPR <= 0 || targetDPR <= 0 || baseW <= 0 || baseH <= 0) return 0;
+            const baseLogicalArea = (baseW / baseDPR) * (baseH / baseDPR);
+            const targetLogicalArea = (targetW / targetDPR) * (targetH / targetDPR);
+            if (baseLogicalArea === 0) return 0;
+            const zoom = baseZoom * (baseDPR / targetDPR) * Math.sqrt(targetLogicalArea / baseLogicalArea);
+            return zoom;
+        }
+
+        function normalizeZoom(sourceW, sourceH, sourceDPR, sourceZoom) {
+            return calculateZoom(
+                sourceW, sourceH, sourceDPR, sourceZoom,
+                UNIVERSAL_BASE.width, UNIVERSAL_BASE.height, UNIVERSAL_BASE.dpr
+            );
+        }
+
+        function applyNormalizedZoom(normalizedZoom, targetW, targetH, targetDPR) {
+            return calculateZoom(
+                UNIVERSAL_BASE.width, UNIVERSAL_BASE.height, UNIVERSAL_BASE.dpr, normalizedZoom,
+                targetW, targetH, targetDPR
+            );
+        }
+
+        // --- 3. 主流程与UI更新 ---
+        function runFullProcess() {
+            // Step 1: 从源面板读取输入
+            const source = {
+                w: parseFloat(elements.sourceWidth.value),
+                h: parseFloat(elements.sourceHeight.value),
+                dpr: parseFloat(elements.sourceDPR.value),
+                zoom: parseFloat(elements.sourceZoom.value),
+            };
+
+            // Step 2: 计算归一化Zoom
+            const normalizedZoom = normalizeZoom(source.w, source.h, source.dpr, source.zoom);
+            elements.normalizedZoomResult.value = normalizedZoom.toFixed(4);
+
+            // Step 3: 从目标面板读取输入，并计算最终Zoom
+            const target = {
+                w: parseFloat(elements.targetWidth.value),
+                h: parseFloat(elements.targetHeight.value),
+                dpr: parseFloat(elements.targetDPR.value),
+            };
+            const finalZoom = applyNormalizedZoom(normalizedZoom, target.w, target.h, target.dpr);
+            elements.finalZoomResult.value = finalZoom.toFixed(4);
+            
+            // Step 4: 更新所有视觉预览
+            updateVisuals(source.zoom, normalizedZoom, finalZoom);
+        }
+
+        function updateVisuals(sourceZoom, normalizedZoom, finalZoom) {
+            // 更新源元素
+            elements.sourceElement.style.zoom = sourceZoom;
+            elements.sourceElement.textContent = `Zoom: ${sourceZoom.toFixed(2)}`;
+            
+            // 更新归一化元素
+            elements.normalizedElement.style.zoom = normalizedZoom;
+            elements.normalizedElement.textContent = `Zoom: ${normalizedZoom.toFixed(4)}`;
+
+            // 更新目标元素
+            elements.targetElement.style.zoom = finalZoom;
+            elements.targetElement.textContent = `Zoom: ${finalZoom.toFixed(4)}`;
+        }
+
+        // --- 4. 事件监听 ---
+        // 将所有输入框组合起来，方便添加监听器
+        const allInputs = [
+            elements.sourceWidth, elements.sourceHeight, elements.sourceDPR, elements.sourceZoom,
+            elements.targetWidth, elements.targetHeight, elements.targetDPR
+        ];
+
+        // 为每一个输入框添加实时更新事件
+        allInputs.forEach(input => {
+            input.addEventListener('input', runFullProcess);
+        });
+
+        // 页面加载时立即运行一次，以显示预设值的结果
+        document.addEventListener('DOMContentLoaded', runFullProcess);
+
+    </script>
+</body>
+</html>

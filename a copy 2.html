@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>更真实的掷骰子（Three.js + Cannon-ES）- 直接运行版</title>
+
+  <!-- 1. 移除 importmap，改为直接引入传统的 JS 库 -->
+  <!-- Three.js 核心库 -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <!-- Three.js 附加组件 (注意路径从 jsm/ 变为 js/) -->
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/geometries/RoundedBoxGeometry.js"></script>
+  <!-- Cannon-ES 物理引擎 (UMD 版本) -->
+  <script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon.umd.js"></script>
+
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      background: #e9ecef;
+    }
+    canvas#c { display: block; width: 100%; height: 100%; touch-action: none; }
+    .ui { position: fixed; left: 0; right: 0; bottom: env(safe-area-inset-bottom); display: flex; justify-content: center; padding: 12px; pointer-events: none; }
+    .ui-inner {
+      pointer-events: auto; display: flex; gap: 12px; align-items: center;
+      padding: 8px 12px; border-radius: 12px;
+      background: color-mix(in oklab, #ffffff 72%, transparent);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.18); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      max-width: min(720px, 96vw);
+    }
+    button#rollBtn {
+      appearance: none; border: none; border-radius: 10px; padding: 12px 18px;
+      font-size: clamp(14px, 2.8vw, 16px); font-weight: 600; color: white;
+      background: linear-gradient(135deg, #4F46E5, #06B6D4); cursor: pointer;
+      box-shadow: 0 6px 16px rgba(79,70,229,0.35); transition: transform 0.08s ease, filter 0.15s ease;
+      touch-action: manipulation;
+    }
+    button#rollBtn:active { transform: translateY(1px) scale(0.99); filter: brightness(0.95); }
+    .result {
+      font-size: clamp(14px, 3vw, 18px); font-weight: 600; color: #111827;
+      padding: 8px 10px; border-radius: 8px; background: #ffffff; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+      min-width: 5.5em; text-align: center; user-select: none;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0b0e11; }
+      .ui-inner { background: color-mix(in oklab, #0b0e11 20%, transparent); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+      .result { color: #e5e7eb; background: #0f1220; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="ui">
+    <div class="ui-inner">
+      <button id="rollBtn">掷骰子</button>
+      <div class="result" id="result">结果：—</div>
+    </div>
+  </div>
+
+  <!-- 2. 将 script 的 type 从 "module" 改为普通 script -->
+  <script>
+    // 3. 移除所有的 import 语句，因为库已经通过 <script> 标签全局加载
+    // import * as THREE from 'three';
+    // import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    // import * as CANNON from 'cannon-es';
+    // import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+    // 渲染器与场景
+    const canvas = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xE9ECEF);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(4.2, 3.0, 6.0);
+    
+    // 4. 使用全局变量 THREE 来创建对象
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.target.set(0, 0.5, 0);
+    controls.maxPolarAngle = Math.PI * 0.49;
+
+    // 灯光
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x667788, 0.7);
+    scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(5, 10, 4);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(1024, 1024);
+    dir.shadow.camera.near = 1;
+    dir.shadow.camera.far = 40;
+    // 修正：为阴影相机设置范围，避免阴影被裁剪
+    const d = 5;
+    dir.shadow.camera.left = -d;
+    dir.shadow.camera.right = d;
+    dir.shadow.camera.top = d;
+    dir.shadow.camera.bottom = -d;
+    dir.shadow.radius = 2;
+    scene.add(dir);
+
+    // 地面（可微倾）
+    const floorGeo = new THREE.PlaneGeometry(30, 30);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0xf4f5f7, roughness: 0.95, metalness: 0.0 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // 物理世界 (使用全局变量 CANNON)
+    const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+    world.broadphase = new CANNON.SAPBroadphase(world);
+    world.allowSleep = true;
+
+    // 更稳定/真实的求解器与接触参数
+    world.solver.iterations = 15;
+    world.solver.tolerance = 0.001;
+
+    const groundMat = new CANNON.Material('ground');
+    const diceMat   = new CANNON.Material('dice');
+
+    const diceGroundCM = new CANNON.ContactMaterial(groundMat, diceMat, {
+      friction: 0.6,
+      restitution: 0.05,
+      contactEquationStiffness: 1e7,
+      contactEquationRelaxation: 4,
+      frictionEquationStiffness: 1e7,
+      frictionEquationRelaxation: 4
+    });
+    world.addContactMaterial(diceGroundCM);
+
+    // 地面物理体（平面）
+    const groundBody = new CANNON.Body({ mass: 0, material: groundMat, shape: new CANNON.Plane() });
+    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    world.addBody(groundBody);
+
+    // 围墙
+    function addWallBox(pos, halfExtents) {
+      const body = new CANNON.Body({
+        mass: 0,
+        shape: new CANNON.Box(new CANNON.Vec3(...halfExtents)),
+        position: new CANNON.Vec3(...pos),
+        material: groundMat
+      });
+      world.addBody(body);
+      return body;
+    }
+    addWallBox([  3.6, 1.0, 0.0], [0.2, 1.0, 3.6]);
+    addWallBox([ -3.6, 1.0, 0.0], [0.2, 1.0, 3.6]);
+    addWallBox([  0.0, 1.0, 3.6], [3.6, 1.0, 0.2]);
+    addWallBox([  0.0, 1.0,-3.6], [3.6, 1.0, 0.2]);
+
+    // ... (makePipCanvas 函数无需修改) ...
+    function makePipCanvas(n, size = 512, bg = '#ffffff', pip = '#111111') {
+      const s = size;
+      const r = Math.round(s * 0.08);
+      const m = Math.round(s * 0.18);
+      const xs = [m, s / 2, s - m];
+      const ys = xs;
+      const cvs = document.createElement('canvas');
+      cvs.width = cvs.height = s;
+      const ctx = cvs.getContext('2d');
+      ctx.fillStyle = bg;
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(0, 0, s, s, Math.round(s * 0.12));
+        ctx.fill();
+      } else {
+        ctx.fillRect(0, 0, s, s);
+      }
+      ctx.shadowColor = 'rgba(0,0,0,0.08)';
+      ctx.shadowBlur = s * 0.02;
+      ctx.shadowOffsetY = s * 0.01;
+      ctx.fillStyle = pip;
+      const p = [];
+      const add = (ix, iy) => p.push([xs[ix], ys[iy]]);
+      switch (n) {
+        case 1: add(1,1); break;
+        case 2: add(0,0); add(2,2); break;
+        case 3: add(0,0); add(1,1); add(2,2); break;
+        case 4: add(0,0); add(2,0); add(0,2); add(2,2); break;
+        case 5: add(0,0); add(2,0); add(1,1); add(0,2); add(2,2); break;
+        case 6: add(0,0); add(0,1); add(0,2); add(2,0); add(2,1); add(2,2); break;
+      }
+      for (const [x, y] of p) {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return cvs;
+    }
+
+    function makeDiceMaterials() {
+      const faceNumForIndex = { 0: 3, 1: 4, 2: 1, 3: 6, 4: 2, 5: 5 };
+      const mats = [];
+      for (let i = 0; i < 6; i++) {
+        const num = faceNumForIndex[i];
+        const tex = new THREE.CanvasTexture(makePipCanvas(num, 512, '#ffffff', '#111111'));
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
+        mats.push(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.45, metalness: 0.0 }));
+      }
+      return mats;
+    }
+
+    function convexFromGeometry(geometry) {
+      // ... (此函数内部逻辑无需修改, 它依赖 CANNON 全局变量) ...
+      const geo = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+      const pos = geo.attributes.position.array;
+      const vertices = [];
+      const vmap = new Map();
+      const faces = [];
+
+      function addVertex(x, y, z) {
+        const key = `${x.toFixed(5)},${y.toFixed(5)},${z.toFixed(5)}`;
+        let idx = vmap.get(key);
+        if (idx === undefined) {
+          idx = vertices.length;
+          vertices.push(new CANNON.Vec3(x, y, z));
+          vmap.set(key, idx);
+        }
+        return idx;
+      }
+      for (let i = 0; i < pos.length; i += 9) {
+        const a = addVertex(pos[i],   pos[i+1], pos[i+2]);
+        const b = addVertex(pos[i+3], pos[i+4], pos[i+5]);
+        const c = addVertex(pos[i+6], pos[i+7], pos[i+8]);
+        faces.push([a, b, c]);
+      }
+      return new CANNON.ConvexPolyhedron({ vertices, faces });
+    }
+
+    function createDice(size = 1) {
+      const meshGeo = new THREE.BoxGeometry(size, size, size);
+      const mesh = new THREE.Mesh(meshGeo, makeDiceMaterials());
+      mesh.castShadow = true;
+      scene.add(mesh);
+
+      const radius = size * 0.12;
+      // 5. 使用全局变量 THREE 来创建附加组件几何体
+      const roundedGeo = new THREE.RoundedBoxGeometry(size, size, size, 3, radius);
+      const convexShape = convexFromGeometry(roundedGeo);
+
+      const body = new CANNON.Body({
+        mass: 1,
+        material: diceMat,
+        shape: convexShape,
+        linearDamping: 0.01,
+        angularDamping: 0.02
+      });
+      body.allowSleep = true;
+      body.sleepSpeedLimit = 0.08;
+      body.sleepTimeLimit = 0.8;
+      world.addBody(body);
+
+      return { mesh, body, size, radius };
+    }
+
+    const dice = createDice(1);
+
+    // ... (后面所有代码都不需要修改, 它们依赖之前创建的变量) ...
+    function sync(d) {
+      d.mesh.position.copy(d.body.position);
+      d.mesh.quaternion.copy(d.body.quaternion);
+    }
+
+    const faceNormalsLocal = [
+      { idx: 0, normal: new CANNON.Vec3( 1, 0, 0), number: 3 },
+      { idx: 1, normal: new CANNON.Vec3(-1, 0, 0), number: 4 },
+      { idx: 2, normal: new CANNON.Vec3( 0, 1, 0), number: 1 },
+      { idx: 3, normal: new CANNON.Vec3( 0,-1, 0), number: 6 },
+      { idx: 4, normal: new CANNON.Vec3( 0, 0, 1), number: 2 },
+      { idx: 5, normal: new CANNON.Vec3( 0, 0,-1), number: 5 }
+    ];
+    const worldUp = new CANNON.Vec3(0, 1, 0);
+
+    function getTopNumber(body) {
+      let bestDot = -Infinity, top = 1;
+      for (const f of faceNormalsLocal) {
+        const n = f.normal.clone();
+        body.quaternion.vmult(n, n);
+        const dot = n.dot(worldUp);
+        if (dot > bestDot) {
+          bestDot = dot; top = f.number;
+        }
+      }
+      return top;
+    }
+
+    const resultEl = document.getElementById('result');
+    const rollBtn  = document.getElementById('rollBtn');
+    let rolling = false;
+
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+
+    function setRandomTilt() {
+      const tiltX = rand(-0.03, 0.03);
+      const tiltZ = rand(-0.03, 0.03);
+      groundBody.quaternion.setFromEuler(-Math.PI / 2 + tiltX, 0, tiltZ);
+      floor.rotation.x = -Math.PI / 2 + tiltX;
+      floor.rotation.z = tiltZ;
+    }
+
+    function rollDice() {
+      setRandomTilt();
+      dice.body.position.set(rand(-1.0, 1.0), rand(2.8, 3.8), rand(-1.0, 1.0));
+      dice.body.quaternion.setFromEuler(rand(0, Math.PI*2), rand(0, Math.PI*2), rand(0, Math.PI*2));
+      dice.body.velocity.set(rand(-4.0, 4.0), rand(2.0, 7.5), rand(-4.0, 4.0));
+      dice.body.angularVelocity.set(rand(-14, 14), rand(-14, 14), rand(-14, 14));
+      dice.body.wakeUp();
+      rolling = true;
+      resultEl.textContent = '结果：…';
+    }
+
+    rollBtn.addEventListener('click', rollDice);
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') { e.preventDefault(); rollDice(); }
+    });
+
+    let lastTime;
+    const fixedTimeStep = 1 / 120;
+    const maxSubSteps = 4;
+
+    function bodyInContact(b) {
+      return world.narrowphase.contactEquations.some(eq => eq.bi === b || eq.bj === b);
+    }
+
+    function animate(t) {
+      requestAnimationFrame(animate);
+      const now = t / 1000;
+      const dt = lastTime ? Math.min(now - lastTime, 0.1) : fixedTimeStep;
+      lastTime = now;
+
+      world.step(fixedTimeStep, dt, maxSubSteps);
+      dice.body.angularDamping = bodyInContact(dice.body) ? 0.18 : 0.02;
+
+      sync(dice);
+
+      if (rolling && dice.body.sleepState === CANNON.Body.SLEEPING) {
+        const top = getTopNumber(dice.body);
+        resultEl.textContent = '结果：' + top;
+        rolling = false;
+      }
+
+      controls.update();
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    dice.body.position.set(0, 1.2, 0.0);
+    dice.body.angularVelocity.set(2, 1, -2);
+
+    window.addEventListener('resize', () => {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    });
+  </script>
+</body>
+</html>

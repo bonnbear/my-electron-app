@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資訊管理器</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .container {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            overflow: hidden;
+        }
+        .left-panel, .right-panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .left-panel {
+            width: 350px;
+            display: flex;
+            flex-direction: column;
+        }
+        .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .button-group {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        #data-display {
+            margin-top: 20px;
+            flex: 1;
+            overflow-y: auto;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+        .data-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .data-item:hover, .data-item.selected {
+            background-color: #e9ecef;
+        }
+        .item-buttons {
+            display: flex;
+            gap: 5px;
+            white-space: nowrap;
+        }
+        .item-buttons button {
+            padding: 3px 8px;
+            font-size: 0.8em;
+            width: auto;
+            margin-top: 0;
+        }
+        .item-buttons .details-btn {
+            background-color: #17a2b8;
+        }
+        .item-buttons .details-btn:hover {
+            background-color: #138496;
+        }
+        .item-buttons .edit-btn {
+            background-color: #ffc107;
+        }
+        .item-buttons .edit-btn:hover {
+            background-color: #e0a800;
+        }
+        .data-item h3 {
+            margin: 0;
+            font-size: 1em;
+        }
+        .data-item p {
+            margin: 5px 0 0;
+            font-size: 0.9em;
+            color: #666;
+        }
+        #image-container {
+            margin-top: 20px;
+            border: 2px dashed #ccc;
+            padding: 10px;
+            min-height: 150px;
+            text-align: center;
+            color: #888;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        #image-container img {
+            max-width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+        }
+        #image-placeholder {
+            position: absolute;
+        }
+        .hidden {
+            display: none !important;
+        }
+        /* Lightbox styles */
+        #lightbox {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #lightbox img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+        #lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-size: 40px;
+            color: white;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            width: auto;
+            line-height: 1;
+            transition: color 0.3s;
+        }
+        #lightbox-close:hover {
+            color: #ff4444;
+            background: none;
+        }
+
+        /* Details Modal styles */
+        .modal {
+            /* display: none; */ /* Use 'hidden' class to control visibility */
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.6);
+            display: flex; /* Use flexbox for centering */
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            padding: 25px;
+            border: 1px solid #888;
+            width: 90%;
+            max-width: 400px; /* Reduced max-width for a more compact look */
+            border-radius: 10px;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .details-modal-close {
+            color: #aaa;
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 28px;
+            font-weight: bold;
+            line-height: 1;
+        }
+        .details-modal-close:hover,
+        .details-modal-close:focus {
+            color: #333;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        #modal-details-content p {
+            word-break: break-all;
+            margin: 10px 0;
+            font-size: 1.1em;
+        }
+        #modal-password-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between; /* Puts space between password and button */
+            gap: 10px;
+            margin-top: 10px;
+        }
+        #copy-password-btn {
+            padding: 5px 10px;
+            font-size: 0.9em;
+            width: auto;
+            margin-top: 0;
+            background-color: #6c757d;
+            flex-shrink: 0; /* Prevent button from shrinking */
+        }
+        #copy-password-btn:hover {
+            background-color: #5a6268;
+        }
+
+        /* Master Password Modal */
+       #master-password-modal {
+           position: fixed;
+           z-index: 2000;
+           left: 0;
+           top: 0;
+           width: 100%;
+           height: 100%;
+           background-color: rgba(0,0,0,0.7);
+           display: flex;
+           justify-content: center;
+           align-items: center;
+       }
+
+       #master-password-modal .modal-content {
+           width: 90%;
+           max-width: 350px;
+       }
+
+       #master-password-form {
+           display: flex;
+           flex-direction: column;
+           gap: 15px;
+       }
+    </style>
+</head>
+<body>
+    <h1>資訊管理器</h1>
+    <div class="container">
+        <div class="left-panel">
+            <h2 id="form-title">新增資料</h2>
+            <form id="data-form">
+                <input type="hidden" id="entry-id">
+                <div class="form-group">
+                    <label for="name">名稱</label>
+                    <input type="text" id="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="account">帳號</label>
+                    <input type="text" id="account" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">密碼</label>
+                    <input type="password" id="password" required>
+                </div>
+                <div class="button-group">
+                    <button type="submit" id="save-btn">儲存資料</button>
+                    <button type="button" id="clear-btn" style="background-color: #6c757d;">清空表單</button>
+                </div>
+                 <div class="form-group">
+                    <button type="button" id="delete-btn" style="background-color: #dc3545;">刪除資料</button>
+                </div>
+            </form>
+            <div class="button-group">
+                <button id="import-json-btn">匯入 JSON</button>
+                <button id="import-csv-btn">匯入 CSV</button>
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
+                <label for="storage-path">儲存目錄</label>
+                <input type="text" id="storage-path" readonly placeholder="點擊按鈕選擇...">
+                <button id="select-dir-btn">選擇目錄</button>
+            </div>
+            <div id="settings-section" style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+               <h3>應用程式設定</h3>
+               <button id="settings-btn">設定主密碼</button>
+           </div>
+        </div>
+        <div class="right-panel">
+            <div id="data-display">
+                <h2>資料列表</h2>
+                <input type="text" id="search-input" placeholder="搜尋名稱或帳號..." style="width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box;">
+                <div id="data-list"></div>
+            </div>
+            <div id="details-section" class="hidden">
+                <h2>資料詳情</h2>
+                <div id="details-content"></div>
+            </div>
+            <div id="image-section" class="hidden">
+                <h2>對應圖片</h2>
+                <div id="image-container" tabindex="0">
+                    <span id="image-placeholder">點此匯入或貼上圖片</span>
+                    <img id="entry-image" src="" class="hidden" alt="Entry Image">
+                </div>
+                 <div class="button-group">
+                    <button id="import-image-btn">從檔案匯入</button>
+                    <button id="delete-image-btn">刪除圖片</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightbox Modal -->
+    <div id="lightbox" class="hidden">
+        <button id="lightbox-close">&times;</button>
+        <img id="lightbox-image" src="" alt="Enlarged image">
+    </div>
+
+    <!-- Details Modal -->
+    <div id="details-modal" class="modal hidden">
+        <div class="modal-content">
+            <span id="close-details-btn" class="details-modal-close">&times;</span>
+            <h2>詳細資訊</h2>
+            <div id="modal-details-content">
+                <p id="details-name"></p>
+                <p id="details-account"></p>
+                <div id="modal-password-container">
+                    <p id="details-password" style="margin:0;"></p>
+                    <button id="copy-password-btn">複製密碼</button>
+                </div>
+                <img id="details-image" src="" alt="Details Image" style="max-width: 100%; border-radius: 5px; margin-top: 15px; display: none; cursor: pointer;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Master Password Modal -->
+   <div id="master-password-modal" class="modal hidden">
+       <div class="modal-content">
+           <h2 id="master-password-title">請輸入主密碼</h2>
+           <form id="master-password-form">
+               <div class="form-group">
+                   <label for="master-password-input">主密碼</label>
+                   <input type="password" id="master-password-input" required>
+               </div>
+               <div class="form-group" id="confirm-password-group" style="display: none;">
+                   <label for="master-password-confirm">確認主密碼</label>
+                   <input type="password" id="master-password-confirm">
+               </div>
+               <button type="submit" id="master-password-submit">解鎖</button>
+               <p id="master-password-error" style="color: red; text-align: center; margin: 0;"></p>
+           </form>
+       </div>
+   </div>
+
+   <!-- Settings Modal -->
+   <div id="settings-modal" class="modal hidden">
+       <div class="modal-content">
+           <span id="close-settings-btn" class="details-modal-close">&times;</span>
+           <h2>設定</h2>
+           <div id="settings-content">
+               <p>管理您的主密碼。如果設定了主密碼，您的資料檔案將會被加密。</p>
+               <button id="set-password-btn">設定/變更主密碼</button>
+               <button id="remove-password-btn" style="background-color: #dc3545;">移除主密碼</button>
+           </div>
+       </div>
+   </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

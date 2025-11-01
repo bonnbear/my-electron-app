@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>屏幕占比一致性 Zoom 换算器</title>
+  <style>
+    body { background-color: #f0f2f5; color: #333; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 1rem; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; }
+    #app { width: 100%; max-width: 800px; margin-top: 2rem; padding: 2rem; background-color: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.07); }
+    h1 { text-align: center; color: #1a1a1a; margin-bottom: 2rem; }
+    h2 { color: #42b983; border-bottom: 2px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+    .grid-container { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+    .panel { background-color: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; }
+    .standard-panel { background-color: #fffbe6; border-color: #ffe58f; }
+    .standard-panel .value { font-weight: bold; color: #fa8c16; }
+    .form-group { margin-bottom: 1.5rem; }
+    label { font-weight: bold; display: block; margin-bottom: 0.5rem; }
+    .input-container { display: flex; align-items: center; gap: 1rem; }
+    input[type="range"] { flex-grow: 1; cursor: pointer; }
+    input[type="number"] { width: 80px; padding: 0.5rem; border-radius: 6px; border: 1px solid #ccc; font-size: 1rem; text-align: center; }
+    .value-display { font-weight: bold; font-size: 1.1rem; color: #1a1a1a; background-color: #eee; padding: 0.5rem 1rem; border-radius: 6px; min-width: 50px; text-align: center; }
+    small { color: #7f8c8d; margin-top: 0.5rem; display: block; }
+    .action-button { background-color: #42b983; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: background-color 0.2s; }
+    .action-button:hover { background-color: #36a476; }
+    .result-panel { text-align: center; background-color: #e8f5e9; border-color: #a5d6a7; }
+    .result-panel .formula { background-color: #fff; padding: 0.8rem; border-radius: 4px; margin: 1rem 0; font-family: 'Courier New', Courier, monospace; font-size: 1.1rem; word-wrap: break-word; color: #333; }
+    .result-panel .final-result { font-size: 2.5rem; font-weight: bold; color: #2e7d32; margin-top: 0.5rem; margin-bottom: 1rem; }
+    .verification-panel { background-color: #e3f2fd; border-color: #90caf9;}
+    .verification-panel .percentage { font-size: 1.5rem; font-weight: bold; color: #1565c0; }
+    .verification-panel .match { color: #2e7d32; }
+    .verification-panel .mismatch { color: #c62828; }
+  </style>
+</head>
+<body>
+
+  <div id="app">
+    <h1>屏幕占比一致性 Zoom 换算器</h1>
+
+    <div class="grid-container">
+      <div class="panel standard-panel">
+        <h2>基准标准环境</h2>
+        <p>固定参考系：分辨率 <span class="value">1920x1080</span>, DPR <span class="value">1.0</span></p>
+      </div>
+
+      <div class="panel">
+        <h2>1. 定义归一化 Zoom</h2>
+        <div class="form-group">
+          <label for="normalized-zoom-input">设置在“标准环境”中应用的 Zoom</label>
+          <div class="input-container">
+            <input id="normalized-zoom-input" type="range" v-model.number="normalizedZoom" min="0.1" max="5" step="0.01" />
+            <span class="value-display">{{ formatNumber(normalizedZoom, 2) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>2. 输入您的目标设备参数</h2>
+        <div class="input-container" style="gap: 1.5rem; justify-content: space-around; flex-wrap: wrap;">
+          <div><label>您的DPR</label><input type="number" v-model.number="userDevice.dpr" step="0.01" /></div>
+          <div><label>您的屏幕宽度 (px)</label><input type="number" v-model.number="userDevice.width" step="1" /></div>
+          <button class="action-button" @click="detectDevice">自动检测我的设备</button>
+        </div>
+      </div>
+      
+      <div class="panel result-panel">
+        <h2>3. 核心计算结果</h2>
+        <p>为保证屏幕占比不变，应应用的 CSS Zoom 是：</p>
+        <div class="formula">
+          <code>{{ formatNumber(normalizedZoom, 2) }} * ({{ userDevice.width }} / 1920) / {{ userDevice.dpr }}</code>
+        </div>
+        <div class="final-result">{{ formatNumber(appliedZoom, 4) }}</div>
+      </div>
+
+      <div class="panel verification-panel">
+        <h2>4. 效果验证</h2>
+        <p>一个基础 CSS 宽度为 100px 的元素：</p>
+        <p>在标准屏上，屏幕占比为: <span class="percentage">{{ formatNumber(context.standardPercentage, 3) }}%</span></p>
+        <p>在您的设备上，屏幕占比为: <span class="percentage">{{ formatNumber(context.userPercentage, 3) }}%</span></p>
+        <p :class="context.isMatch ? 'match' : 'mismatch'">
+          <strong>{{ context.isMatch ? '✓ 占比完全一致' : '✗ 占比不匹配，请检查参数' }}</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script>
+    const { createApp, ref, reactive, computed } = Vue;
+
+    createApp({
+      setup() {
+        // --- 固定标准 ---
+        const standardDevice = { width: 1920, dpr: 1.0 };
+
+        // --- 用户输入 ---
+        const normalizedZoom = ref(1.5);
+        const userDevice = reactive({
+          dpr: window.devicePixelRatio || 1,
+          width: window.screen.width,
+        });
+
+        // --- 核心计算 (新公式) ---
+        const appliedZoom = computed(() => {
+          if (userDevice.dpr > 0 && standardDevice.width > 0) {
+            const widthRatio = userDevice.width / standardDevice.width;
+            return (normalizedZoom.value * widthRatio) / userDevice.dpr;
+          }
+          return 0;
+        });
+
+        // --- 验证逻辑 ---
+        const context = computed(() => {
+          const baseElementCssWidth = 100; // 任意一个基准CSS宽度
+
+          // 在标准屏上的占比
+          const standardPhysicalWidth = baseElementCssWidth * normalizedZoom.value * standardDevice.dpr;
+          const standardPercentage = (standardPhysicalWidth / standardDevice.width) * 100;
+
+          // 在用户设备上的占比
+          const userPhysicalWidth = baseElementCssWidth * appliedZoom.value * userDevice.dpr;
+          const userPercentage = (userPhysicalWidth / userDevice.width) * 100;
+          
+          // 检查是否匹配 (允许极小的浮点误差)
+          const isMatch = Math.abs(standardPercentage - userPercentage) < 0.0001;
+
+          return { standardPercentage, userPercentage, isMatch };
+        });
+
+        // --- 方法 ---
+        const detectDevice = () => {
+          userDevice.dpr = window.devicePixelRatio || 1;
+          userDevice.width = window.screen.width;
+        };
+
+        const formatNumber = (num, digits) => {
+          return typeof num === 'number' ? num.toFixed(digits) : 'N/A';
+        };
+        
+        return {
+          normalizedZoom,
+          userDevice,
+          appliedZoom,
+          context,
+          detectDevice,
+          formatNumber,
+        };
+      }
+    }).mount('#app');
+  </script>
+
+</body>
+</html>

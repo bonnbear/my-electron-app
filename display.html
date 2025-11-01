@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>显示窗口</title>
+    <style>
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .element { width: 150px; height: 150px; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 16px; font-family: sans-serif; font-weight: bold; border-radius: 8px; transform-origin: center center; transition: all 0.2s ease-out; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .zoom-value { font-size: 24px; margin-top: 5px; }
+        .info { font-size: 12px; position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 4px; color: white; }
+        body.base { background-color: #e3f2fd; }
+        .base .element { background: #1976d2; }
+        body.target { background-color: #e8f5e9; }
+        .target .element { background: #2e7d32; }
+    </style>
+</head>
+<body>
+    <div class="element">
+        <span id="title"></span>
+        <span id="zoomValue" class="zoom-value">0.0</span>
+    </div>
+    <div id="info" class="info"></div>
+
+    <script>
+        const channel = new BroadcastChannel('zoom_auto_demo_channel_fixed');
+        const element = document.querySelector('.element');
+        const titleEl = document.getElementById('title');
+        const zoomValueEl = document.getElementById('zoomValue');
+        const infoEl = document.getElementById('info');
+
+        // 从URL获取此窗口的类型 ('base' 或 'target')
+        const windowType = new URLSearchParams(window.location.search).get('type');
+
+        function detectAndReport() {
+            // 注意：window.screen.width/height 返回的是CSS像素（逻辑像素）
+            const screenInfo = {
+                width: window.screen.width,
+                height: window.screen.height,
+                dpr: window.devicePixelRatio
+            };
+            
+            // 发送报告给控制台
+            channel.postMessage({
+                messageType: 'report',
+                payload: {
+                    windowType: windowType,
+                    ...screenInfo
+                }
+            });
+            
+            infoEl.innerHTML = `检测到: ${screenInfo.width}x${screenInfo.height} @${screenInfo.dpr}x`;
+        }
+
+        // 监听来自控制台的消息
+        channel.onmessage = (event) => {
+            const { messageType, payload } = event.data;
+
+            if (messageType === 'updateZoom') {
+                let zoomToApply = 0;
+                // 根据自己的窗口类型，应用对应的 zoom 值
+                if (windowType === 'base') {
+                    zoomToApply = payload.baseZoom;
+                } else if (windowType === 'target') {
+                    zoomToApply = payload.targetZoom;
+                }
+                
+                element.style.zoom = zoomToApply;
+                zoomValueEl.textContent = zoomToApply > 0 ? zoomToApply.toFixed(4) : 'N/A';
+
+            } else if (messageType === 'requestReport') {
+                // 当控制台请求时，重新检测并报告
+                detectAndReport();
+            }
+        };
+
+        // 初始化窗口样式和标题
+        if (windowType === 'base') {
+            document.body.classList.add('base');
+            document.title = '基准设备窗口';
+            titleEl.textContent = '基准设备';
+        } else if (windowType === 'target') {
+            document.body.classList.add('target');
+            document.title = '目标设备窗口';
+            titleEl.textContent = '目标设备';
+        }
+
+        // 窗口加载时立即进行一次检测和报告
+        window.addEventListener('load', detectAndReport);
+    </script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "name": "info-manager",
+  "version": "1.0.0",
+  "description": "資訊管理器",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "papaparse": "^5.5.3"
+  },
+  "build": {
+    "appId": "com.yourcompany.info-manager",
+    "productName": "資訊管理器",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

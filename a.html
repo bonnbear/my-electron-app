@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>高级钢琴与相对音感训练器 (加长版)</title>
+<style>
+    :root {
+        --bg-color: #f0f2f5;
+        --panel-bg: #ffffff;
+        --shadow-light: #ffffff;
+        --shadow-dark: #d1d9e6;
+        --text-color: #333;
+        --primary-color: #007bff;
+        --key-press-color: #00c6ff;
+        --key-press-shadow: #0072ff;
+        --correct-color: #28a745;
+        --incorrect-color: #dc3545;
+    }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        margin: 0;
+        padding: 20px;
+        box-sizing: border-box;
+        -webkit-user-select: none; user-select: none;
+    }
+    .main-container {
+        width: 100%;
+        max-width: 1200px; /* 为更长的钢琴增加了最大宽度 */
+        text-align: center;
+    }
+    #start-prompt {
+        font-size: 1.5em; padding: 15px 30px; border-radius: 12px; cursor: pointer;
+        background-color: var(--primary-color); color: white; border: none;
+        box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3); transition: all 0.2s ease;
+    }
+    #start-prompt:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 123, 255, 0.4); }
+    
+    .app-content { display: none; }
+
+    .control-panel {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+        margin-bottom: 20px;
+        padding: 20px;
+        background: var(--panel-bg);
+        border-radius: 12px;
+        box-shadow: 5px 5px 15px var(--shadow-dark), -5px -5px 15px var(--shadow-light);
+    }
+    .control-group {
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+    }
+    .control-group legend {
+        font-weight: bold;
+        padding: 0 10px;
+        color: var(--primary-color);
+    }
+    .control-group select, .control-group .btn {
+        width: 100%;
+        padding: 10px;
+        margin-top: 10px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        font-size: 1em;
+        box-sizing: border-box;
+    }
+    .btn {
+        cursor: pointer;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        transition: background-color 0.2s;
+    }
+    .btn:hover { background-color: #0056b3; }
+    
+    #output-display {
+        min-height: 50px;
+        padding: 15px;
+        margin-bottom: 20px;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: inset 3px 3px 7px var(--shadow-dark), inset -3px -3px 7px var(--shadow-light);
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+    }
+    #output-display.correct { color: var(--correct-color); }
+    #output-display.incorrect { color: var(--incorrect-color); }
+
+    .guess-buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+    }
+
+    .piano-container {
+        width: 100%;
+        background: linear-gradient(145deg, #4a4a4a, #2c2c2c);
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 10px 10px 25px rgba(0,0,0,0.5);
+        box-sizing: border-box;
+    }
+    .piano { display: flex; position: relative; width: 100%; height: 220px; }
+    .key { border: 1px solid #999; box-sizing: border-box; cursor: pointer; position: relative; transition: all 0.07s ease; }
+    .white { flex-grow: 1; height: 100%; background: linear-gradient(to bottom, #fff, #f1f1f1); border-bottom-left-radius: 5px; border-bottom-right-radius: 5px; box-shadow: inset 0 -5px 3px rgba(0,0,0,0.05), 0 2px 3px rgba(0,0,0,0.2); }
+    .black { /* 宽度现在由JS设定 */ height: 60%; position: absolute; z-index: 2; background: linear-gradient(to bottom, #333, #000); border-color: #000; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.4); }
+    .key.playing, .key:active { transform: scale(0.98); }
+    .white.playing, .white:active { background: linear-gradient(to bottom, var(--key-press-color), var(--key-press-shadow)); box-shadow: inset 0 0 8px rgba(255,255,255,0.6), 0 0 10px var(--key-press-color); }
+    .black.playing, .black:active { background: linear-gradient(to bottom, var(--key-press-color), var(--key-press-shadow)); box-shadow: inset 0 0 5px rgba(255,255,255,0.7), 0 0 10px var(--key-press-color); border-color: var(--key-press-color); }
+    
+    /* --- 已修改：调整标签位置 --- */
+    .key-label {
+        position: absolute;
+        bottom: 8px;
+        width: 100%;
+        text-align: left; /* 改为左对齐 */
+        padding-left: 4px; /* 增加左内边距以避免贴边 */
+        box-sizing: border-box; /* 确保内边距不会增加宽度 */
+        font-size: 12px;
+        font-weight: bold;
+        pointer-events: none;
+        color: #555;
+    }
+    .black .key-label {
+        color: #ccc;
+        font-size: 10px;
+        top: 10px;
+        bottom: auto;
+    }
+    /* --- 修改结束 --- */
+    
+    .key.playing .key-label { color: white; }
+    
+</style>
+</head>
+<body>
+
+<div class="main-container">
+    <div id="start-prompt">
+        <h1>高级钢琴与相对音感训练器</h1>
+        <p>点击这里开始</p>
+    </div>
+
+    <div class="app-content">
+        <div class="control-panel">
+            <fieldset class="control-group">
+                <legend>音阶自动演奏器</legend>
+                <select id="scale-root">
+                    <!-- 选项将由JS生成 -->
+                </select>
+                <select id="scale-type">
+                    <option value="major">大调 (Major)</option>
+                    <option value="minor">自然小调 (Natural Minor)</option>
+                </select>
+                <button id="play-scale-btn" class="btn">播放音阶</button>
+            </fieldset>
+
+            <fieldset class="control-group">
+                <legend>音程听力训练</legend>
+                <button id="play-interval-btn" class="btn">播放随机音程</button>
+                <div id="interval-choices" class="guess-buttons"></div>
+            </fieldset>
+            
+            <fieldset class="control-group">
+                <legend>旋律模唱挑战</legend>
+                <button id="start-melody-btn" class="btn">开始挑战</button>
+            </fieldset>
+        </div>
+
+        <div id="output-display">请选择一项功能开始训练</div>
+
+        <div class="piano-container" id="piano-container">
+            <div class="piano">
+                <!-- 琴键将由JS生成 -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- 1. INITIALIZATION & SETUP ---
+const startButton = document.getElementById('start-prompt');
+const appContent = document.querySelector('.app-content');
+let audioContext;
+let isPlaying = false;
+
+const ALL_NOTES = [];
+const noteNamesWithSharps = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const noteNamesWithFlats = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+const baseFreqA4 = 440.0;
+
+// 从C3 (MIDI 48) 生成到 E6 (MIDI 88) 的音符
+for (let midi = 48; midi <= 88; midi++) {
+    const octave = Math.floor(midi / 12) - 1;
+    const noteIndex = midi % 12;
+    const noteName = `${noteNamesWithSharps[noteIndex]}${octave}`;
+    const displayName = `${noteNamesWithSharps[noteIndex]} / ${noteNamesWithFlats[noteIndex]}`;
+    const freq = baseFreqA4 * Math.pow(2, (midi - 69) / 12);
+    ALL_NOTES.push({ note: noteName, freq: freq, octave: octave, displayName: displayName });
+}
+
+const SCALE_FORMULAS = {
+    major: [0, 2, 4, 5, 7, 9, 11, 12],
+    minor: [0, 2, 3, 5, 7, 8, 10, 12]
+};
+
+const INTERVAL_NAMES = [
+    "小二度", "大二度", "小三度", "大三度", "纯四度", "增四度", "纯五度",
+    "小六度", "大六度", "小七度", "大七度", "纯八度"
+];
+
+const outputDisplay = document.getElementById('output-display');
+const pianoDiv = document.querySelector('.piano');
+const scaleRootSelect = document.getElementById('scale-root');
+
+// --- 2. AUDIO ENGINE ---
+function initializeAudio() {
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            alert('Web Audio API 在此浏览器中不受支持。');
+        }
+    }
+}
+
+function playNote(frequency, duration = 0.5) {
+    if (!audioContext) return;
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.7, audioContext.currentTime + 0.02);
+    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + duration);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + duration);
+}
+
+// --- 3. PIANO UI & INTERACTION ---
+function createPianoKeys() {
+    pianoDiv.innerHTML = ''; // 清除现有琴键
+    const whiteKeys = ALL_NOTES.filter(n => !n.note.includes('#'));
+    const whiteKeyCount = whiteKeys.length;
+    const whiteKeyWidth = 100 / whiteKeyCount;
+
+    let whiteKeyIndex = -1;
+    ALL_NOTES.forEach(noteInfo => {
+        const keyEl = document.createElement('div');
+        const isBlack = noteInfo.note.includes('#');
+        keyEl.dataset.note = noteInfo.note;
+
+        const label = document.createElement('span');
+        label.className = 'key-label';
+        label.textContent = noteInfo.note.slice(0, -1).replace('#', '♯');
+        keyEl.appendChild(label);
+
+        if (isBlack) {
+            keyEl.className = 'key black';
+            const blackKeyWidth = whiteKeyWidth * 0.6; // 黑键宽度是白键的60%
+            const leftPosition = (whiteKeyIndex + 1) * whiteKeyWidth - (blackKeyWidth / 2);
+            keyEl.style.width = `${blackKeyWidth}%`;
+            keyEl.style.left = `${leftPosition}%`;
+        } else {
+            keyEl.className = 'key white';
+            whiteKeyIndex++;
+        }
+        
+        pianoDiv.appendChild(keyEl);
+    });
+}
+
+function highlightKey(noteName, duration) {
+    const keyEl = document.querySelector(`.key[data-note="${noteName}"]`);
+    if (keyEl) {
+        keyEl.classList.add('playing');
+        setTimeout(() => keyEl.classList.remove('playing'), duration * 1000);
+    }
+}
+
+// --- 4. FEATURE: SCALE PLAYER ---
+const playScaleBtn = document.getElementById('play-scale-btn');
+const scaleTypeSelect = document.getElementById('scale-type');
+
+function populateRootNotes() {
+    ALL_NOTES.forEach(note => {
+        if (note.octave < 6) { // 填充C3到B5的音符
+            const option = document.createElement('option');
+            option.value = note.note;
+            option.textContent = (note.note.includes('#') ? note.displayName.split(' ')[0] : note.note.slice(0,1)) + note.octave;
+            if (note.note === 'C4') {
+                option.selected = true; // 默认选中C4
+            }
+            scaleRootSelect.appendChild(option);
+        }
+    });
+}
+
+function getNoteByName(name) {
+    return ALL_NOTES.find(n => n.note === name);
+}
+
+function getScaleNotes(rootNoteName, scaleTypeName) {
+    const rootNoteIndex = ALL_NOTES.findIndex(n => n.note === rootNoteName);
+    const formula = SCALE_FORMULAS[scaleTypeName];
+    if (rootNoteIndex === -1 || !formula) return [];
+    return formula.map(interval => ALL_NOTES[rootNoteIndex + interval]).filter(Boolean);
+}
+
+playScaleBtn.addEventListener('click', async () => {
+    if (isPlaying) return;
+    isPlaying = true;
+    
+    const rootNote = scaleRootSelect.value;
+    const scaleType = scaleTypeSelect.value;
+    const notesToPlay = getScaleNotes(rootNote, scaleType);
+    
+    const selectedOption = scaleRootSelect.options[scaleRootSelect.selectedIndex].text;
+    outputDisplay.textContent = `正在播放: ${selectedOption} ${scaleType} 音阶`;
+    outputDisplay.className = '';
+    
+    for (let i = 0; i < notesToPlay.length; i++) {
+        const note = notesToPlay[i];
+        playNote(note.freq, 0.4);
+        highlightKey(note.note, 0.4);
+        outputDisplay.textContent = `音: ${note.note}`;
+        await new Promise(resolve => setTimeout(resolve, 400));
+    }
+    
+    outputDisplay.textContent = "播放完毕。请选择一项功能开始训练";
+    isPlaying = false;
+});
+
+// --- 5. FEATURE: INTERVAL TRAINER ---
+const playIntervalBtn = document.getElementById('play-interval-btn');
+const intervalChoicesDiv = document.getElementById('interval-choices');
+let correctIntervalName = '';
+
+function setupIntervalTrainer() {
+    INTERVAL_NAMES.forEach((name, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.textContent = name;
+        btn.dataset.intervalIndex = index;
+        btn.addEventListener('click', checkIntervalAnswer);
+        intervalChoicesDiv.appendChild(btn);
+    });
+}
+
+playIntervalBtn.addEventListener('click', async () => {
+    if (isPlaying) return;
+    isPlaying = true;
+    
+    outputDisplay.textContent = '仔细听...';
+    outputDisplay.className = '';
+    
+    const rootIndex = Math.floor(Math.random() * 24); // 从较低的两个八度(C3-B4)中选择
+    const rootNote = ALL_NOTES[rootIndex];
+    const interval = Math.floor(Math.random() * 12) + 1;
+    const secondNote = ALL_NOTES[rootIndex + interval];
+    
+    if (!secondNote) { // 如果音程超出范围，则重试
+        isPlaying = false;
+        playIntervalBtn.click();
+        return;
+    }
+    
+    correctIntervalName = INTERVAL_NAMES[interval - 1];
+    
+    playNote(rootNote.freq, 0.5);
+    highlightKey(rootNote.note, 0.5);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    
+    playNote(secondNote.freq, 0.5);
+    highlightKey(secondNote.note, 0.5);
+    
+    setTimeout(() => {
+        outputDisplay.textContent = '你听到的是什么音程?';
+        isPlaying = false;
+    }, 500);
+});
+
+function checkIntervalAnswer(event) {
+    if (isPlaying) return;
+    const guessedName = event.target.textContent;
+    if (guessedName === correctIntervalName) {
+        outputDisplay.textContent = `正确! 是 ${correctIntervalName}`;
+        outputDisplay.className = 'correct';
+    } else {
+        outputDisplay.textContent = `错误。正确答案是 ${correctIntervalName}`;
+        outputDisplay.className = 'incorrect';
+    }
+}
+
+// --- 6. FEATURE: MELODY CHALLENGE ---
+const startMelodyBtn = document.getElementById('start-melody-btn');
+let melodySequence = [];
+let playerSequence = [];
+let melodyGameState = 'idle';
+
+async function playMelodySequence() {
+    melodyGameState = 'listening';
+    outputDisplay.textContent = '请听...';
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    for (const note of melodySequence) {
+        playNote(note.freq, 0.4);
+        highlightKey(note.note, 0.4);
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    melodyGameState = 'playing';
+    outputDisplay.textContent = `你的回合! (得分: ${melodySequence.length - 1})`;
+    playerSequence = [];
+}
+
+startMelodyBtn.addEventListener('click', () => {
+    if (isPlaying || melodyGameState === 'listening') return;
+    melodyGameState = 'idle';
+    melodySequence = [];
+    playerSequence = [];
+    addNewNoteToMelody();
+    playMelodySequence();
+});
+
+function addNewNoteToMelody() {
+    const randomNoteIndex = 12 + Math.floor(Math.random() * 12); // 从C4-B4八度中选择
+    melodySequence.push(ALL_NOTES[randomNoteIndex]);
+}
+
+function handlePianoKeyPress(event) {
+    const key = event.target.closest('.key');
+    if (!key || isPlaying) return;
+    
+    const noteName = key.dataset.note;
+    const note = getNoteByName(noteName);
+    if (!note) return;
+    
+    playNote(note.freq, 0.4);
+    highlightKey(note.note, 0.4);
+    
+    if (melodyGameState === 'playing') {
+        playerSequence.push(note);
+        const currentNoteIndex = playerSequence.length - 1;
+        
+        if (playerSequence[currentNoteIndex].note !== melodySequence[currentNoteIndex].note) {
+            outputDisplay.textContent = `错误! 最终得分: ${melodySequence.length - 1}。点击“开始挑战”重试。`;
+            outputDisplay.className = 'incorrect';
+            melodyGameState = 'idle';
+            return;
+        }
+        
+        if (playerSequence.length === melodySequence.length) {
+            outputDisplay.textContent = `正确! 准备下一轮...`;
+            outputDisplay.className = 'correct';
+            addNewNoteToMelody();
+            setTimeout(playMelodySequence, 1500);
+        }
+    }
+}
+
+// --- 7. APP START ---
+startButton.addEventListener('click', () => {
+    initializeAudio();
+    startButton.style.display = 'none';
+    appContent.style.display = 'block';
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    createPianoKeys();
+    populateRootNotes();
+    setupIntervalTrainer();
+    document.getElementById('piano-container').addEventListener('mousedown', handlePianoKeyPress);
+    document.getElementById('piano-container').addEventListener('touchstart', handlePianoKeyPress, {passive: true});
+});
+</script>
+
+</body>
+</html>
